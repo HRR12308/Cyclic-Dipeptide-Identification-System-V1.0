@@ -67,7 +67,7 @@ def process_files(file_path1, file_path2):
                                         value not in matched_values_set and value < target_value]
                     additional_targets = [44.0495, 72.0808, 101.1073, 120.0808, 60.0444, 74.06, 159.0917, 136.0757,
                                           70.0651, 86.0964, 104.0529, 112.0886, 87.0553, 88.0393, 84.0444, 101.0709,
-                                          41.0480, 110.0713, 84.0808, 76.0216]
+                                          41.0480, 110.0713, 84.0808, 76.0216, 86.0606, 84.0813, 73.0766, 130.0980, 87.0922, 58.0657]
                     extra_matched_values = []
                     for target in additional_targets:
                         extra_matched_values.extend(match_values(target, remaining_values))
@@ -106,61 +106,123 @@ def process_files(file_path1, file_path2):
 
             # --- Section 3: Cyclopeptide Matching ---
             mz_df = pd.read_excel(file_path2)
-            mz_to_cyclo = mz_df.set_index('m/z')['name'].to_dict()
+            # 创建一个映射字典，允许同一个m/z对应多个名称
+            mz_to_cyclo = {}
+            for _, row in mz_df.iterrows():
+                mz = row['m/z']
+                name = row['name']
+                if mz not in mz_to_cyclo:
+                    mz_to_cyclo[mz] = []
+                mz_to_cyclo[mz].append(name)
 
             def match_cyclo(mh_value):
-                for mz, name in mz_to_cyclo.items():
+                # 收集所有匹配的环二肽名称
+                matched_names = []
+
+                # 遍历所有m/z值
+                for mz, names in mz_to_cyclo.items():
+                    # 检查m/z差值是否在±0.01范围内
                     if abs(mh_value - mz) <= 0.01:
-                        return name
-                return "Not a cyclic dipeptide"
+                        # 添加所有对应的名称
+                        matched_names.extend(names)
+
+                # 如果有匹配项，返回逗号分隔的字符串；否则返回未匹配提示
+                return ", ".join(matched_names) if matched_names else "Not a cyclic dipeptide"
 
             df['Matched to cyclic dipeptides'] = df['M+H'].apply(match_cyclo)
 
             def update_cyclo_name(row):
-                if row['Matched to cyclic dipeptides'] == 'Cyclo(Gly-Ile)':
+                # 获取当前匹配结果
+                current_match = row['Matched to cyclic dipeptides']
+
+                # 如果匹配结果中包含目标肽才进行处理
+                if 'Cyclo(Gly-Ile)' in current_match:
                     triple_match_results = row['Triple match results']
+
+                    # 跳过"无匹配"的情况
                     if triple_match_results == 'No match':
-                        return row['Matched to cyclic dipeptides']
+                        return current_match
+
                     try:
+                        # 解析所有三重匹配值
                         values = [float(val.strip()) for val in triple_match_results.split(',') if val.strip()]
-                        for value in values:
-                            if abs(value - 72.0808) <= 0.01:
-                                return 'Cyclo(Ala-Val)'
+
+                        # 检查是否存在目标值(72.0808±0.01)
+                        found_72 = any(abs(value - 72.0808) <= 0.01 for value in values)
+
+                        if found_72:
+                            # 将匹配结果拆分为单个名称
+                            names = [name.strip() for name in current_match.split(',')]
+
+                            # 替换所有目标肽名称
+                            updated_names = []
+                            for name in names:
+                                if name == 'Cyclo(Gly-Ile)':
+                                    updated_names.append('Cyclo(Ala-Val)')
+                                else:
+                                    updated_names.append(name)
+
+                            # 返回更新后的逗号分隔字符串
+                            return ", ".join(updated_names)
                     except ValueError:
                         print(f"警告: 行 {row.name} 的 'Triple match results' 无法解析为浮点数: {triple_match_results}")
-                return row['Matched to cyclic dipeptides']
+
+                return current_match
 
             df['Matched to cyclic dipeptides'] = df.apply(update_cyclo_name, axis=1)
 
             # --- Section 4: Result Judgment and Sorting ---
+            # 首先添加新逻辑：当Match results和Quadratic match results都不是"No match"，但Matched to cyclic dipeptides为"Not a cyclic dipeptide"时
+            for idx, row in df.iterrows():
+                if (row['Match results'] != 'No match' and
+                        row['Quadratic match results'] != 'No match' and
+                        row['Matched to cyclic dipeptides'] == 'Not a cyclic dipeptide'):
+                    df.at[idx, 'Matched to cyclic dipeptides'] = 'Unknown'
+
             def judge_row(row):
                 def is_unmatched(value):
                     return value == 'No match'
 
-                if not is_unmatched(row['Match results']) and not is_unmatched(row['Quadratic match results']) and not is_unmatched(
+                # 处理特殊情况：当Matched to cyclic dipeptides为"Unknown"时
+                if row['Matched to cyclic dipeptides'] == 'Unknown':
+                    return 'Unknown'
+
+                if not is_unmatched(row['Match results']) and not is_unmatched(
+                        row['Quadratic match results']) and not is_unmatched(
                         row['Triple match results']):
                     return 'Level 1'
-                elif not is_unmatched(row['Match results']) and not is_unmatched(row['Quadratic match results']) and is_unmatched(
+                elif not is_unmatched(row['Match results']) and not is_unmatched(
+                        row['Quadratic match results']) and is_unmatched(
                         row['Triple match results']):
                     return 'Not a cyclic dipeptide'
-                elif not is_unmatched(row['Match results']) and is_unmatched(row['Quadratic match results']) and not is_unmatched(
+                elif not is_unmatched(row['Match results']) and is_unmatched(
+                        row['Quadratic match results']) and not is_unmatched(
                         row['Triple match results']):
                     return 'Level 2'
-                elif not is_unmatched(row['Match results']) and is_unmatched(row['Quadratic match results']) and is_unmatched(
+                elif not is_unmatched(row['Match results']) and is_unmatched(
+                        row['Quadratic match results']) and is_unmatched(
                         row['Triple match results']):
                     return 'Not a cyclic dipeptide'
                 elif is_unmatched(row['Match results']) and is_unmatched(row['Quadratic match results']):
                     return 'Not a cyclic dipeptide'
-                elif is_unmatched(row['Match results']) and not is_unmatched(row['Quadratic match results']) and not is_unmatched(
+                elif is_unmatched(row['Match results']) and not is_unmatched(
+                        row['Quadratic match results']) and not is_unmatched(
                         row['Triple match results']):
                     return 'Level 3'
-                elif is_unmatched(row['Match results']) and not is_unmatched(row['Quadratic match results']) and is_unmatched(
+                elif is_unmatched(row['Match results']) and not is_unmatched(
+                        row['Quadratic match results']) and is_unmatched(
                         row['Triple match results']):
                     return 'Not a cyclic dipeptide'
                 else:
                     return 'Unknown'
 
             df['Results'] = df.apply(judge_row, axis=1)
+
+            # 在过滤前，处理特殊情况：当Matched to cyclic dipeptides为"Unknown"但结果被判断为"Not a cyclic dipeptide"时
+            for idx, row in df.iterrows():
+                if row['Matched to cyclic dipeptides'] == 'Unknown' and row['Results'] == 'Not a cyclic dipeptide':
+                    df.at[idx, 'Results'] = 'Unknown'
+
             filtered_df = df[~df['Results'].str.contains('Not a cyclic dipeptide', na=False)]
             sorted_df = filtered_df.sort_values(by='Results')
 
@@ -264,8 +326,3 @@ def create_file_input_window():
 if __name__ == "__main__":
     create_login_window()
 import pandas as pd
-
-
-
-
-
