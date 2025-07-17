@@ -288,7 +288,6 @@ def create_file_input_window():
 
     file_input_window.mainloop()
 
-# 主程序入口
 if __name__ == "__main__":
     create_login_window()
 import pandas as pd
