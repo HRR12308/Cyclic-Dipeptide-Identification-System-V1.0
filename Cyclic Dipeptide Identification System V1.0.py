@@ -3,14 +3,11 @@ from tkinter import messagebox
 from tkinter import filedialog
 import pandas as pd
 
-# 设置艺术字的字体样式
 custom_font = ("Arial", 16, "bold")
 
-# 假设这是您的登录验证函数
 def login(username, password):
     return username == "1" and password == "1"
 
-# 选择文件并更新文本框内容
 def select_file(entry_widget):
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
     if file_path:
@@ -106,7 +103,6 @@ def process_files(file_path1, file_path2):
 
             # --- Section 3: Cyclopeptide Matching ---
             mz_df = pd.read_excel(file_path2)
-            # 创建一个映射字典，允许同一个m/z对应多个名称
             mz_to_cyclo = {}
             for _, row in mz_df.iterrows():
                 mz = row['m/z']
@@ -116,45 +112,33 @@ def process_files(file_path1, file_path2):
                 mz_to_cyclo[mz].append(name)
 
             def match_cyclo(mh_value):
-                # 收集所有匹配的环二肽名称
                 matched_names = []
 
-                # 遍历所有m/z值
                 for mz, names in mz_to_cyclo.items():
-                    # 检查m/z差值是否在±0.01范围内
                     if abs(mh_value - mz) <= 0.01:
-                        # 添加所有对应的名称
                         matched_names.extend(names)
 
-                # 如果有匹配项，返回逗号分隔的字符串；否则返回未匹配提示
                 return ", ".join(matched_names) if matched_names else "Not a cyclic dipeptide"
 
             df['Matched to cyclic dipeptides'] = df['M+H'].apply(match_cyclo)
 
             def update_cyclo_name(row):
-                # 获取当前匹配结果
                 current_match = row['Matched to cyclic dipeptides']
 
-                # 如果匹配结果中包含目标肽才进行处理
                 if 'Cyclo(Gly-Ile)' in current_match:
                     triple_match_results = row['Triple match results']
 
-                    # 跳过"无匹配"的情况
                     if triple_match_results == 'No match':
                         return current_match
 
                     try:
-                        # 解析所有三重匹配值
                         values = [float(val.strip()) for val in triple_match_results.split(',') if val.strip()]
 
-                        # 检查是否存在目标值(72.0808±0.01)
                         found_72 = any(abs(value - 72.0808) <= 0.01 for value in values)
 
                         if found_72:
-                            # 将匹配结果拆分为单个名称
                             names = [name.strip() for name in current_match.split(',')]
 
-                            # 替换所有目标肽名称
                             updated_names = []
                             for name in names:
                                 if name == 'Cyclo(Gly-Ile)':
@@ -162,17 +146,15 @@ def process_files(file_path1, file_path2):
                                 else:
                                     updated_names.append(name)
 
-                            # 返回更新后的逗号分隔字符串
                             return ", ".join(updated_names)
                     except ValueError:
-                        print(f"警告: 行 {row.name} 的 'Triple match results' 无法解析为浮点数: {triple_match_results}")
+                        print(f"error: row {row.name} 的 'Triple match results' Cannot be parsed as a floating point number: {triple_match_results}")
 
                 return current_match
 
             df['Matched to cyclic dipeptides'] = df.apply(update_cyclo_name, axis=1)
 
             # --- Section 4: Result Judgment and Sorting ---
-            # 首先添加新逻辑：当Match results和Quadratic match results都不是"No match"，但Matched to cyclic dipeptides为"Not a cyclic dipeptide"时
             for idx, row in df.iterrows():
                 if (row['Match results'] != 'No match' and
                         row['Quadratic match results'] != 'No match' and
@@ -183,7 +165,6 @@ def process_files(file_path1, file_path2):
                 def is_unmatched(value):
                     return value == 'No match'
 
-                # 处理特殊情况：当Matched to cyclic dipeptides为"Unknown"时
                 if row['Matched to cyclic dipeptides'] == 'Unknown':
                     return 'Unknown'
 
@@ -218,7 +199,6 @@ def process_files(file_path1, file_path2):
 
             df['Results'] = df.apply(judge_row, axis=1)
 
-            # 在过滤前，处理特殊情况：当Matched to cyclic dipeptides为"Unknown"但结果被判断为"Not a cyclic dipeptide"时
             for idx, row in df.iterrows():
                 if row['Matched to cyclic dipeptides'] == 'Unknown' and row['Results'] == 'Not a cyclic dipeptide':
                     df.at[idx, 'Results'] = 'Unknown'
@@ -231,76 +211,64 @@ def process_files(file_path1, file_path2):
     except Exception as e:
         print(f"An error occurred while processing the file: {e}")
         messagebox.showerror("error", f"An error occurred while processing the file: {e}")
-        return  # 提前返回，避免继续执行可能导致问题的代码
+        return  
 
-    # 如果没有错误发生，继续执行这里
     print(f"Processing complete. Results saved to {file_path1}")
 
-# 登录按钮点击事件处理函数
 def on_login_click(username_entry, password_entry):
     username = username_entry.get()
     password = password_entry.get()
     if login(username, password):
         messagebox.showinfo("Login successful", "Welcome to the system")
-        login_window.destroy()  # 关闭登录窗口
-        create_file_input_window()  # 打开文件选择窗口
+        login_window.destroy() 
+        create_file_input_window()  
     else:
         messagebox.showerror("Login failed", "Wrong username or password")
 
-# 创建登录界面
 def create_login_window():
-    global login_window  # 声明全局变量以在函数外部访问窗口
+    global login_window  
     login_window = tk.Tk()
     login_window.title("Login")
-    login_window.geometry("600x150")  # 设置窗口大小
+    login_window.geometry("600x150")  
 
-    # 添加艺术字，并居中显示
     title_label = tk.Label(login_window, text="Cyclic dipeptide identification system", font=custom_font)
     title_label.pack(side=tk.TOP, pady=20)
 
-    # 创建一个frame来包含登录表单
     form_frame = tk.Frame(login_window)
     form_frame.pack(side=tk.TOP, pady=10)
 
-    # 用户名标签和输入框
     username_label = tk.Label(form_frame, text="Username:")
     username_label.pack(side=tk.LEFT, padx=10, pady=5)
     username_entry = tk.Entry(form_frame)
     username_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
 
-    # 密码标签和输入框
     password_label = tk.Label(form_frame, text="Password:")
     password_label.pack(side=tk.LEFT, padx=10, pady=5)
     password_entry = tk.Entry(form_frame, show="*")
     password_entry.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
 
-    # 登录按钮
     login_button = tk.Button(form_frame, text="Login", command=lambda: on_login_click(username_entry, password_entry))
     login_button.pack(side=tk.LEFT, padx=10, pady=10)
 
-    # 退出按钮
     exit_button = tk.Button(form_frame, text="Log out", command=login_window.quit)
     exit_button.pack(side=tk.RIGHT, padx=10, pady=10)
 
     login_window.mainloop()
 
 def create_file_input_window():
-    global file_input_window  # 声明全局变量以在函数外部访问窗口
-    global file1_entry  # 声明全局变量
-    global file2_entry  # 声明全局变量
+    global file_input_window  
+    global file1_entry  
+    global file2_entry  
     file_input_window = tk.Tk()
     file_input_window.title("Select file")
-    file_input_window.geometry("500x300")  # 设置窗口大小
+    file_input_window.geometry("500x300")  
 
-    # 添加艺术字，并居中显示
     title_label = tk.Label(file_input_window, text="Please select a file to process", font=custom_font)
     title_label.pack(side=tk.TOP, pady=20)
 
-    # 创建一个frame来包含文件选择表单
     form_frame = tk.Frame(file_input_window)
     form_frame.pack(side=tk.TOP, pady=10)
 
-    # 文件1标签和输入框
     file1_label = tk.Label(form_frame, text="Select File 1:")
     file1_label.pack(side=tk.LEFT, padx=10, pady=5)
     file1_entry = tk.Entry(form_frame, width=50)
@@ -308,7 +276,6 @@ def create_file_input_window():
     file1_button = tk.Button(form_frame, text="Browse", command=lambda: select_file(file1_entry))
     file1_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-    # 文件2标签和输入框
     file2_label = tk.Label(form_frame, text="Select File 2:")
     file2_label.pack(side=tk.LEFT, padx=10, pady=5)
     file2_entry = tk.Entry(form_frame, width=50)
@@ -316,7 +283,6 @@ def create_file_input_window():
     file2_button = tk.Button(form_frame, text="Browse", command=lambda: select_file(file2_entry))
     file2_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-    # 数据处理按钮
     process_button = tk.Button(form_frame, text="data processing", command=lambda: process_files(file1_entry.get(), file2_entry.get()))
     process_button.pack(side=tk.LEFT, padx=10, pady=20)
 
